@@ -175,7 +175,6 @@ public class PojoStickTest<T extends Object> {
         TestPojoStringObject test1 = new TestPojoStringObject("Test String");
         pj.save(test1);
         List<TestPojoStringObject> resultString = pj.findType(TestPojoStringObject.class, "Test String");
-        //TestPojoStringObject resultString1 = (TestPojoStringObject) resultString;
         assertEquals(test1.getTestString(), resultString.get(0).getTestString());
         TestPojoStringObject test2 = new TestPojoStringObject("Test String 2");
         pj.save(test2);
@@ -185,8 +184,8 @@ public class PojoStickTest<T extends Object> {
         compareList.add(test2);
         assertEquals(resultList.size(), compareList.size());
         pj.close();
-        File db = new File("/home/armin/data/pojostick/stringtest.pojo");
-        db.delete();
+        //File db = new File("/home/armin/data/pojostick/stringtest.pojo");
+        //db.delete();
     }
 
     /*
