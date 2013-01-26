@@ -41,23 +41,23 @@ public class PojoStick {
     // This list stores the objects that are currently in the store.  This is currently
     // only filled when adding new objects, then cleared.
     private List<Object> objects;
-    // A list for new objects that still need to be changed.
-    private List<Object> addObjects;
-    // A list to hold the objects that are to be deleted.
-    private List<Object> delObjects;
     // The JSON converter
     private Gson gson;
-    //private GsonBuilder queueGson;
+    // Thread that processes the queue.
     private QueueProcessor queueThread;
-    private String queueSeparator = "----QUEUE----";
+    // Constant that sets the divider between the contents and the queue.
+    private static final String queueSeparator = "----QUEUE----";
+    // The queue that holds the actions that need to be performed.
     private Queue<PojoAction> actionQueue;
+    // Flag to tell the system if there are items in the queue that need
+    // to be processed before the file can be read.
     private boolean dirty;
 
+    // List of actions that can be performed on objects in the store.
     private enum Action {
-
         SAVE, DELETE
     };
-    /* flag to tell persist() whether this.objects is current or needs to be
+    /* flag to tell persist() whether this.getObjects() is current or needs to be
      * refreshed.
      */
     private boolean ready;
@@ -76,8 +76,6 @@ public class PojoStick {
         this.gson = queueGson.create();
         this.pojofile = new File(filename);
         objects = new ArrayList<>(0);
-        addObjects = new ArrayList<>(0);
-        delObjects = new ArrayList<>(0);
         actionQueue = new ConcurrentLinkedQueue<PojoAction>();
         this.ready = false;
         this.dirty = false;
@@ -130,6 +128,46 @@ public class PojoStick {
         queueThread = new QueueProcessor(this);
     }
 
+    public synchronized boolean isDirty() {
+        return dirty;
+    }
+
+    public synchronized void setDirty(boolean dirty) {
+        this.dirty = dirty;
+    }
+
+    public synchronized File getPojofile() {
+        return pojofile;
+    }
+
+    public synchronized void setPojofile(File pojofile) {
+        this.pojofile = pojofile;
+    }
+
+    public synchronized List<Object> getObjects() {
+        return objects;
+    }
+
+    public synchronized void setObjects(List<Object> objects) {
+        this.objects = objects;
+    }
+
+    public synchronized Queue<PojoAction> getActionQueue() {
+        return actionQueue;
+    }
+
+    public synchronized void setActionQueue(Queue<PojoAction> actionQueue) {
+        this.actionQueue = actionQueue;
+    }
+
+    public synchronized boolean isReady() {
+        return ready;
+    }
+
+    public synchronized void setReady(boolean ready) {
+        this.ready = ready;
+    }
+
     /**
      * Function to verify that the file can be used as a valid Pojostick object
      * store.
@@ -158,75 +196,12 @@ public class PojoStick {
     }
 
     /**
-     * Internal class to store actions on the database.
-     */
-    private class PojoAction {
-
-        private Action action;
-        private String type;
-        private Object target;
-
-        public PojoAction() {
-        }
-
-        PojoAction(Action action, Object target) {
-            this.action = action;
-            this.type = target.getClass().getName();
-            this.target = target;
-        }
-    }
-
-    private class PojoActionDeSerializer implements JsonDeserializer<PojoAction> {
-
-        @Override
-        public PojoAction deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context) throws JsonParseException {
-            JsonObject jobject = (JsonObject) json;
-            PojoAction newPA = new PojoAction();
-            newPA.action = Action.valueOf(jobject.get("action").getAsString());
-            newPA.type = jobject.get("type").getAsString();
-            try {
-                newPA.target = context.deserialize(jobject.get("target"), Class.forName(newPA.type));
-            }
-            catch (ClassNotFoundException ex) {
-                java.util.logging.Logger.getLogger(PojoStick.class.getName()).log(Level.SEVERE, null, ex);
-            }
-            //newPA.target = newPA.type.getClass().cast(jobject.get("target"));
-            //Object asObject = (Object)jobject.get("target");
-            return newPA;
-        }
-    }
-
-    /**
-     * Internal method that adds an action to the end of the file.
-     *
-     * @param action SAVE or DELETE
-     * @param target the Object to store.
-     */
-    private void addAction(Action action, Object target) {
-        PojoAction pa = new PojoAction(action, target);
-        synchronized (this) {
-            FileWriter writer;
-            try {
-                writer = new FileWriter(pojofile, true);
-                writer.write(gson.toJson(pa) + "\n");
-                writer.close();
-            }
-            catch (IOException ex) {
-                LOGGER.error("IOError: " + ex);
-            }
-            this.dirty = true;
-        }
-    }
-
-    /**
      * Method to allow user to save object if added with add()
      *
      * @return void
      */
     public void save() {
         this.persist();
-        this.addObjects.clear();
-        this.delObjects.clear();
     }
 
     /**
@@ -236,10 +211,6 @@ public class PojoStick {
      */
     public void save(Object t) {
         this.addAction(Action.SAVE, t);
-        //this.add(t);
-        //this.persist();
-        //this.addObjects.clear();
-        //this.delObjects.clear();
     }
 
     /*public <T> Query<T> createQuery(Class<T> kind) {
@@ -254,7 +225,6 @@ public class PojoStick {
      */
     public void add(Object t) {
         this.addAction(Action.SAVE, t);
-        //this.addObjects.add(t);
     }
 
     /**
@@ -262,44 +232,42 @@ public class PojoStick {
      * writes to the file.
      */
     private void persist() {
-        synchronized (this) {
-            if (this.ready == false) {
-                this.objects = find();
-                Queue<PojoAction> currentQueue = this.readQueue();
-            }
-            Queue<PojoAction> currentQueue = this.actionQueue;
-            //this.objects.addAll(this.addObjects);
-            //this.objects.removeAll(delObjects);
-            int fileLength = this.objects.size();
-            String[] lines = new String[fileLength];
-            for (int i = 0; i < this.objects.size(); i++) {
-                String jsonString = gson.toJson(this.objects.get(i));
-                String className = this.objects.get(i).getClass().getName();
-                lines[i] = className + "\t" + jsonString + "\n";
-            }
-            StringBuilder writeContents = new StringBuilder();
-            for (int i = 0; i < lines.length; i++) {
-                writeContents.append(lines[i]);
-            }
-            StringBuilder writeQueue = new StringBuilder();
-            for (PojoAction action : currentQueue) {
-                String line = gson.toJson(action) + "\n";
-                writeQueue.append(line);
-            }
-            FileWriter writer;
-            try {
-                writer = new FileWriter(pojofile, false);
-                writer.write(writeContents.toString());
-                writer.write(queueSeparator + "\n");
-                writer.write(writeQueue.toString());
-                writer.close();
-            }
-            catch (IOException ex) {
-                LOGGER.error("IOError: " + ex);
-            }
-            this.objects.clear();
-            this.ready = false;
+        System.out.println("Persist Starting...");
+        if (this.ready == false) {
+            this.setObjects(readContents(null));
+            Queue<PojoAction> currentQueue = this.readQueue();
         }
+        Queue<PojoAction> currentQueue = this.getActionQueue();
+        int fileLength = this.getObjects().size();
+        String[] lines = new String[fileLength];
+        for (int i = 0; i < this.getObjects().size(); i++) {
+            String jsonString = gson.toJson(this.getObjects().get(i));
+            String className = this.getObjects().get(i).getClass().getName();
+            lines[i] = className + "\t" + jsonString + "\n";
+        }
+        StringBuilder writeContents = new StringBuilder();
+        for (int i = 0; i < lines.length; i++) {
+            writeContents.append(lines[i]);
+        }
+        StringBuilder writeQueue = new StringBuilder();
+        for (PojoAction action : currentQueue) {
+            String line = gson.toJson(action) + "\n";
+            writeQueue.append(line);
+        }
+        FileWriter writer;
+        try {
+            writer = new FileWriter(this.getPojofile(), false);
+            writer.write(writeContents.toString());
+            writer.write(queueSeparator + "\n");
+            writer.write(writeQueue.toString());
+            writer.close();
+        }
+        catch (IOException ex) {
+            LOGGER.error("IOError: " + ex);
+        }
+        this.getObjects().clear();
+        this.ready = false;
+        System.out.println("Persist done.");
     }
 
     /**
@@ -309,7 +277,6 @@ public class PojoStick {
      */
     public void delete(Object t) {
         this.addAction(Action.DELETE, t);
-        //this.delObjects.add(t);
     }
 
     /**
@@ -322,9 +289,12 @@ public class PojoStick {
      * @return a List of objects of type className
      */
     public <T extends Object> List<T> findType(Class<T> className, String query) {
+        if (isDirty()) {
+            System.out.println("It's dirty, waiting to read.");
+            this.queueThread.process();
+        }
         List<Object> rawObjects = readContents(query);
         // Add new objects in case new objects have been added but not saved.
-        rawObjects.addAll(addObjects);
         List<T> returnObjects = new ArrayList<T>();
         for (Object obj : rawObjects) {
             if (className.getName().equals(obj.getClass().getName())) {
@@ -341,6 +311,10 @@ public class PojoStick {
      * @return a List<Object> of all objects that match the criteria.
      */
     public List<Object> find(String query) {
+        if (isDirty()) {
+            System.out.println("It's dirty, waiting to read.");
+            this.queueThread.process();
+        }
         return readContents(query);
     }
 
@@ -350,6 +324,10 @@ public class PojoStick {
      * @return a List<Object> of all objects in the store.
      */
     public List<Object> find() {
+        if (isDirty()) {
+            System.out.println("It's dirty, waiting to read.");
+            this.queueThread.process();
+        }
         return readContents(null);
     }
 
@@ -362,35 +340,33 @@ public class PojoStick {
      * @return
      */
     private List<Object> readContents(String query) {
-        if (this.dirty) {
-            this.queueThread.goAhead();
-        }
-        synchronized (this) {
-            ArrayList<Object> returnList = new ArrayList<Object>();
-            try {
-                FileInputStream fstream = new FileInputStream(pojofile);
-                DataInputStream in = new DataInputStream(fstream);
-                BufferedReader br = new BufferedReader(new InputStreamReader(in));
-                String line;
-                if (query == null) {
-                    while (!(line = br.readLine()).equals(queueSeparator)) {
+        System.out.println("readcontents wants to read...");
+        System.out.println("readcontents is reading.");
+        ArrayList<Object> returnList = new ArrayList<Object>();
+        try {
+            FileInputStream fstream = new FileInputStream(this.getPojofile());
+            DataInputStream in = new DataInputStream(fstream);
+            BufferedReader br = new BufferedReader(new InputStreamReader(in));
+            String line;
+            if (query == null) {
+                while (!(line = br.readLine()).equals(queueSeparator)) {
+                    returnList.add(reAnimate(line));
+                }
+            }
+            else {
+                while (!(line = br.readLine()).equals(queueSeparator)) {
+                    if (line.contains(query)) {
                         returnList.add(reAnimate(line));
                     }
                 }
-                else {
-                    while (!(line = br.readLine()).equals(queueSeparator)) {
-                        if (line.contains(query)) {
-                            returnList.add(reAnimate(line));
-                        }
-                    }
-                }
-                in.close();
             }
-            catch (Exception e) {//Catch exception if any
-                LOGGER.error("Error: " + e.getMessage());
-            }
-            return returnList;
+            in.close();
         }
+        catch (Exception e) {//Catch exception if any
+            LOGGER.error("Error: " + e.getMessage());
+        }
+        System.out.println("Done reading.");
+        return returnList;
     }
 
     /**
@@ -425,114 +401,10 @@ public class PojoStick {
     }
 
     /**
-     * Internal method to read the queue at the end of the file.
-     */
-    private Queue<PojoAction> readQueue() {
-        synchronized (this) {
-            this.actionQueue.clear();
-            Queue<PojoAction> tempQueue = new ConcurrentLinkedQueue<PojoAction>();
-            try {
-                FileInputStream fstream = new FileInputStream(pojofile);
-                DataInputStream in = new DataInputStream(fstream);
-                BufferedReader br = new BufferedReader(new InputStreamReader(in));
-                String line;
-                while ((line = br.readLine()) != null) {
-                    if (line.equals(queueSeparator)) {
-                        while ((line = br.readLine()) != null) {
-                            PojoAction action = gson.fromJson(line, PojoAction.class);
-                            tempQueue.add(action);
-                        }
-                    }
-                }
-                in.close();
-            }
-            catch (Exception e) {//Catch exception if any
-                LOGGER.error("Error: " + e.getMessage());
-            }
-            this.actionQueue = tempQueue;
-            return this.actionQueue;
-        }
-    }
-
-    /**
-     * Internal method that processes the queue at the end of the file.
-     */
-    private void processQueue() {
-        this.readQueue();
-        if (!this.actionQueue.isEmpty()) {
-            this.objects = find();
-            while (!this.actionQueue.isEmpty()) {
-                PojoAction next = this.actionQueue.remove();
-                if (next.action == Action.SAVE) {
-                    Object toSave;
-                    try {
-                        toSave = Class.forName(next.type).cast(next.target);
-                        this.objects.add(toSave);
-                    }
-                    catch (ClassNotFoundException ex) {
-                        this.LOGGER.error("Class not found: " + ex);
-                    }
-                }
-                else if (next.action == Action.DELETE) {
-                    Object toDelete;
-                    try {
-                        toDelete = Class.forName(next.type).cast(next.target);
-                        this.objects.remove(toDelete);
-                    }
-                    catch (ClassNotFoundException ex) {
-                        this.LOGGER.error("Class not found: " + ex);
-                    }
-                }
-            }
-            this.ready = true;
-            this.persist();
-            this.dirty = false;
-        }
-    }
-
-    private static class QueueProcessor extends Thread {
-
-        boolean keepGoing;
-        PojoStick pojostick;
-
-        public QueueProcessor(PojoStick pojostick) {
-            this.pojostick = pojostick;
-            this.keepGoing = true;
-            start();
-        }
-
-        public void windDown() {
-            this.keepGoing = false;
-        }
-
-        public void goAhead() {
-            if (this.pojostick.dirty) {
-                pojostick.processQueue();
-            }
-        }
-
-        @Override
-        public void run() {
-            while (keepGoing) {
-                if (this.pojostick.dirty) {
-                    pojostick.processQueue();
-                }
-                /*try {
-                 Thread.sleep(1000);
-                 }
-                 catch (InterruptedException ex) {
-                 this.pojostick.LOGGER.error("Interruption exception " + ex);
-                 }*/
-            }
-        }
-    }
-
-    /**
      * Close the PojoStick file after you are done.
      */
     void close() {
         objects = null;
-        addObjects = null;
         this.queueThread.windDown();
     }
 
@@ -543,6 +415,187 @@ public class PojoStick {
     private static class FileNotVerifiableException extends Exception {
 
         public FileNotVerifiableException() {
+        }
+    }
+
+    /**
+     * Internal class to store actions on the database.
+     */
+    private class PojoAction {
+
+        private Action action;
+        private String type;
+        private Object target;
+
+        public PojoAction() {
+        }
+
+        PojoAction(Action action, Object target) {
+            this.action = action;
+            this.type = target.getClass().getName();
+            this.target = target;
+        }
+    }
+
+    /**
+     * Gson custom deserializer class to make sure PojoActions are properly deserialized.
+     */
+    private class PojoActionDeSerializer implements JsonDeserializer<PojoAction> {
+
+        /**
+         * Internal method that deserializes a PojoAction object.  It is 
+         * necessary because otherwise the target is cast as a Gson String Map
+         * instead of the type it needs to be.
+         * @param json
+         * @param typeOfT
+         * @param context
+         * @return
+         * @throws JsonParseException 
+         */
+        @Override
+        public PojoAction deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context) throws JsonParseException {
+            JsonObject jobject = (JsonObject) json;
+            PojoAction newPA = new PojoAction();
+            newPA.action = Action.valueOf(jobject.get("action").getAsString());
+            newPA.type = jobject.get("type").getAsString();
+            try {
+                newPA.target = context.deserialize(jobject.get("target"), Class.forName(newPA.type));
+            }
+            catch (ClassNotFoundException ex) {
+                java.util.logging.Logger.getLogger(PojoStick.class.getName()).log(Level.SEVERE, null, ex);
+            }
+            return newPA;
+        }
+    }
+
+    /**
+     * Internal method that adds an action to the end of the file.
+     *
+     * @param action SAVE or DELETE
+     * @param target the Object to store.
+     */
+    private void addAction(Action action, Object target) {
+        PojoAction pa = new PojoAction(action, target);
+        FileWriter writer;
+        System.out.println("addaction wants to add...");
+        System.out.println("addaction took control.");
+        try {
+            writer = new FileWriter(this.getPojofile(), true);
+            writer.write(gson.toJson(pa) + "\n");
+            writer.close();
+        }
+        catch (IOException ex) {
+            LOGGER.error("IOError: " + ex);
+        }
+        setDirty(true);
+        System.out.println("Addaction done, dirty set to " + isDirty());
+    }
+
+    /**
+     * Class for the internal queue processing thread.
+     */
+    private static class QueueProcessor extends Thread {
+
+        // Flag to whether to keep going
+        boolean keepGoing;
+        // Reference to the parent object
+        PojoStick pojostick;
+
+        public QueueProcessor(PojoStick pojostick) {
+            this.pojostick = pojostick;
+            this.keepGoing = true;
+            start();
+            //System.out.println("Queue Processor Starting!");
+        }
+
+        /**
+         * Method to stop the thread.
+         */
+        public void windDown() {
+            this.keepGoing = false;
+        }
+
+        /**
+         * Method to process the queue.
+         */
+        public void process() {
+            if (this.pojostick.isDirty()) {
+                //System.out.println("Time to process the queue!");
+                pojostick.processQueue();
+            }
+        }
+
+        @Override
+        public void run() {
+            while (keepGoing) {
+            }
+        }
+    }
+
+    /**
+     * Internal method to read the queue at the end of the file.
+     */
+    private Queue<PojoAction> readQueue() {
+        System.out.println("readQueue wants to read...");
+        System.out.println("readQueue is reading.");
+        this.getActionQueue().clear();
+        Queue<PojoAction> tempQueue = new ConcurrentLinkedQueue<PojoAction>();
+        try {
+            FileInputStream fstream = new FileInputStream(this.getPojofile());
+            DataInputStream in = new DataInputStream(fstream);
+            BufferedReader br = new BufferedReader(new InputStreamReader(in));
+            String line;
+            while ((line = br.readLine()) != null) {
+                if (line.equals(queueSeparator)) {
+                    while ((line = br.readLine()) != null) {
+                        PojoAction action = gson.fromJson(line, PojoAction.class);
+                        tempQueue.add(action);
+                    }
+                }
+            }
+            in.close();
+        }
+        catch (Exception e) {//Catch exception if any
+            LOGGER.error("Error: " + e.getMessage());
+        }
+        this.setActionQueue(tempQueue);
+        return this.getActionQueue();
+    }
+
+    /**
+     * Internal method that processes the queue at the end of the file.
+     */
+    private void processQueue() {
+        this.readQueue();
+        if (!this.getActionQueue().isEmpty()) {
+            this.setObjects(readContents(null));
+            while (!this.getActionQueue().isEmpty()) {
+                PojoAction next = this.getActionQueue().remove();
+                if (next.action == Action.SAVE) {
+                    Object toSave;
+                    try {
+                        toSave = Class.forName(next.type).cast(next.target);
+                        this.getObjects().add(toSave);
+                    }
+                    catch (ClassNotFoundException ex) {
+                        this.LOGGER.error("Class not found: " + ex);
+                    }
+                }
+                else if (next.action == Action.DELETE) {
+                    Object toDelete;
+                    try {
+                        toDelete = Class.forName(next.type).cast(next.target);
+                        this.getObjects().remove(toDelete);
+                    }
+                    catch (ClassNotFoundException ex) {
+                        this.LOGGER.error("Class not found: " + ex);
+                    }
+                }
+            }
+            this.ready = true;
+            this.persist();
+            setDirty(false);
+            //this.dirty = false;
         }
     }
 }
