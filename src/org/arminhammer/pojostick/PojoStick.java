@@ -55,6 +55,7 @@ public class PojoStick {
 
     // List of actions that can be performed on objects in the store.
     private enum Action {
+
         SAVE, DELETE
     };
     /* flag to tell persist() whether this.getObjects() is current or needs to be
@@ -73,6 +74,7 @@ public class PojoStick {
         this.LOGGER = LoggerFactory.getLogger(PojoStick.class);
         GsonBuilder queueGson = new GsonBuilder();
         queueGson.registerTypeAdapter(PojoAction.class, new PojoActionDeSerializer());
+        queueGson.registerTypeAdapter(PojoItem.class, new PojoItemDeSerializer());
         this.gson = queueGson.create();
         this.pojofile = new File(filename);
         objects = new ArrayList<>(0);
@@ -181,11 +183,15 @@ public class PojoStick {
             DataInputStream in = new DataInputStream(fstream);
             BufferedReader br = new BufferedReader(new InputStreamReader(in));
             String line;
-            while ((line = br.readLine()) != null) {
-                Object test = (reAnimate(line));
+            while (!(line = br.readLine()).equals(queueSeparator)) {
+                PojoItem test = (gson.fromJson(line, PojoItem.class));
                 if (test == null) {
                     return false;
                 }
+            }
+            while ((line = br.readLine()) != null) {
+                System.out.println("Looked at queue.");
+                PojoAction temp = gson.fromJson(line, PojoAction.class);
             }
             in.close();
         }
@@ -213,10 +219,6 @@ public class PojoStick {
         this.addAction(Action.SAVE, t);
     }
 
-    /*public <T> Query<T> createQuery(Class<T> kind) {
-
-     return new Query<T>(kind);
-     }*/
     /**
      * Adds an object to the object store. save() must be called before the
      * object will be persisted!
@@ -241,9 +243,7 @@ public class PojoStick {
         int fileLength = this.getObjects().size();
         String[] lines = new String[fileLength];
         for (int i = 0; i < this.getObjects().size(); i++) {
-            String jsonString = gson.toJson(this.getObjects().get(i));
-            String className = this.getObjects().get(i).getClass().getName();
-            lines[i] = className + "\t" + jsonString + "\n";
+            lines[i] = gson.toJson(new PojoItem(this.getObjects().get(i))) + "\n";
         }
         StringBuilder writeContents = new StringBuilder();
         for (int i = 0; i < lines.length; i++) {
@@ -350,13 +350,18 @@ public class PojoStick {
             String line;
             if (query == null) {
                 while (!(line = br.readLine()).equals(queueSeparator)) {
-                    returnList.add(reAnimate(line));
+                    PojoItem nextItem = gson.fromJson(line, PojoItem.class);
+                    returnList.add(nextItem.item);
+                    //returnList.add(gson.fromJson(null, null));
+                    //returnList.add(reAnimate(line));
                 }
             }
             else {
                 while (!(line = br.readLine()).equals(queueSeparator)) {
                     if (line.contains(query)) {
-                        returnList.add(reAnimate(line));
+                        PojoItem nextItem = gson.fromJson(line, PojoItem.class);
+                        returnList.add(nextItem.item);
+                        //returnList.add(reAnimate(line));
                     }
                 }
             }
@@ -419,6 +424,53 @@ public class PojoStick {
     }
 
     /**
+     * Internal class to store items in the file.
+     */
+    private class PojoItem {
+
+        private String type;
+        private Object item;
+
+        public PojoItem() {
+        }
+
+        public PojoItem(Object item) {
+            this.item = item;
+            this.type = item.getClass().getName();
+        }
+    }
+
+    /**
+     * Gson custom deserializer class to make sure PojoActions are properly
+     * deserialized.
+     */
+    private class PojoItemDeSerializer implements JsonDeserializer<PojoItem> {
+
+        /**
+         * Internal method that deserializes a PojoItem object.
+         *
+         * @param json
+         * @param typeOfT
+         * @param context
+         * @return
+         * @throws JsonParseException
+         */
+        @Override
+        public PojoItem deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context) throws JsonParseException {
+            JsonObject jobject = (JsonObject) json;
+            PojoItem newPI = new PojoItem();
+            newPI.type = jobject.get("type").getAsString();
+            try {
+                newPI.item = context.deserialize(jobject.get("item"), Class.forName(newPI.type));
+            }
+            catch (ClassNotFoundException ex) {
+                LOGGER.error("Class not found error: " + ex);
+            }
+            return newPI;
+        }
+    }
+
+    /**
      * Internal class to store actions on the database.
      */
     private class PojoAction {
@@ -438,19 +490,21 @@ public class PojoStick {
     }
 
     /**
-     * Gson custom deserializer class to make sure PojoActions are properly deserialized.
+     * Gson custom deserializer class to make sure PojoActions are properly
+     * deserialized.
      */
     private class PojoActionDeSerializer implements JsonDeserializer<PojoAction> {
 
         /**
-         * Internal method that deserializes a PojoAction object.  It is 
+         * Internal method that deserializes a PojoAction object. It is
          * necessary because otherwise the target is cast as a Gson String Map
          * instead of the type it needs to be.
+         *
          * @param json
          * @param typeOfT
          * @param context
          * @return
-         * @throws JsonParseException 
+         * @throws JsonParseException
          */
         @Override
         public PojoAction deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context) throws JsonParseException {
@@ -462,7 +516,7 @@ public class PojoStick {
                 newPA.target = context.deserialize(jobject.get("target"), Class.forName(newPA.type));
             }
             catch (ClassNotFoundException ex) {
-                java.util.logging.Logger.getLogger(PojoStick.class.getName()).log(Level.SEVERE, null, ex);
+                LOGGER.error("Class not found error: " + ex);
             }
             return newPA;
         }

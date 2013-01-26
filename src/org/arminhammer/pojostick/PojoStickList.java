@@ -14,7 +14,7 @@ import java.util.ListIterator;
  *
  * @author armin
  */
-public class PojoStickList<T extends Serializable> implements List<T> {
+public class PojoStickList<T> implements List<T> {
 
     public PojoStickList(String filename) {
         
