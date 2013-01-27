@@ -54,9 +54,8 @@ public class PojoStick {
     private boolean dirty;
 
     // List of actions that can be performed on objects in the store.
-    private enum Action {
-
-        SAVE, DELETE
+    public enum Action {
+        SAVE, DELETE, UPDATE
     };
     /* flag to tell persist() whether this.getObjects() is current or needs to be
      * refreshed.
@@ -105,7 +104,7 @@ public class PojoStick {
         else {
             try {
                 File parent = this.pojofile.getParentFile();
-                System.out.println("Parent: " + parent);
+                //System.out.println("Parent: " + parent);
                 if (!this.pojofile.getParentFile().exists()) {
                     this.pojofile.getParentFile().mkdirs();
                 }
@@ -118,9 +117,9 @@ public class PojoStick {
                 catch (IOException ex) {
                     LOGGER.error("IOError: " + ex);
                 }
-                System.out.println("pojofile is " + this.pojofile);
+                //System.out.println("pojofile is " + this.pojofile);
                 boolean created = this.pojofile.createNewFile();
-                System.out.println(created);
+                //System.out.println(created);
 
             }
             catch (IOException ex) {
@@ -229,6 +228,10 @@ public class PojoStick {
         this.addAction(Action.SAVE, t);
     }
 
+    public void update(Object t, Object newT) {
+        this.addAction(Action.UPDATE, t, newT);
+    }
+
     /**
      * Internal method that saves new objects, and removes deleted ones, and
      * writes to the file.
@@ -291,7 +294,7 @@ public class PojoStick {
     public <T extends Object> List<T> findType(Class<T> className, String query) {
         if (isDirty()) {
             System.out.println("It's dirty, waiting to read.");
-            this.queueThread.process();
+            this.processQueue();
         }
         List<Object> rawObjects = readContents(query);
         // Add new objects in case new objects have been added but not saved.
@@ -313,7 +316,7 @@ public class PojoStick {
     public List<Object> find(String query) {
         if (isDirty()) {
             System.out.println("It's dirty, waiting to read.");
-            this.queueThread.process();
+            this.processQueue();
         }
         return readContents(query);
     }
@@ -326,9 +329,51 @@ public class PojoStick {
     public List<Object> find() {
         if (isDirty()) {
             System.out.println("It's dirty, waiting to read.");
-            this.queueThread.process();
+            this.processQueue();
         }
         return readContents(null);
+    }
+
+    /**
+     * Returns a specific object if it is found in the store.
+     *
+     * @param o
+     * @return
+     */
+    public boolean contains(Object o) {
+        if (isDirty()) {
+            System.out.println("It's dirty, waiting to read.");
+            this.processQueue();
+            //this.queueThread.process();
+        }
+        List<Object> list = readContents(null);
+        for (Object listO : list) {
+            if (o.equals(listO)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Returns a specific object if it is found in the store.
+     *
+     * @param o
+     * @return
+     */
+    public Object find(Object o) {
+        if (isDirty()) {
+            System.out.println("It's dirty, waiting to read.");
+            this.processQueue();
+            //this.queueThread.process();
+        }
+        List<Object> list = readContents(null);
+        for (Object listO : list) {
+            if (o.equals(listO)) {
+                return listO;
+            }
+        }
+        return null;
     }
 
     /**
@@ -351,7 +396,7 @@ public class PojoStick {
             if (query == null) {
                 while (!(line = br.readLine()).equals(queueSeparator)) {
                     PojoItem nextItem = gson.fromJson(line, PojoItem.class);
-                    returnList.add(nextItem.item);
+                    returnList.add(nextItem.getItem());
                     //returnList.add(gson.fromJson(null, null));
                     //returnList.add(reAnimate(line));
                 }
@@ -360,7 +405,7 @@ public class PojoStick {
                 while (!(line = br.readLine()).equals(queueSeparator)) {
                     if (line.contains(query)) {
                         PojoItem nextItem = gson.fromJson(line, PojoItem.class);
-                        returnList.add(nextItem.item);
+                        returnList.add(nextItem.getItem());
                         //returnList.add(reAnimate(line));
                     }
                 }
@@ -372,37 +417,6 @@ public class PojoStick {
         }
         System.out.println("Done reading.");
         return returnList;
-    }
-
-    /**
-     * Private helper method that reads a string and inflates it into an object.
-     *
-     * @param input
-     * @return
-     */
-    private Object reAnimate(String input) {
-        String[] split = input.split("\t");
-        Object classType = null;
-        //Object newInstance = null;
-        try {
-            try {
-                classType = Class.forName(split[0]).newInstance();
-                //newInstance = classType.newInstance();
-            }
-            catch (InstantiationException ex) {
-                LOGGER.error("Instantiation failed " + ex);
-            }
-            catch (IllegalAccessException ex) {
-                LOGGER.error("Illegal access " + ex);
-            }
-        }
-        catch (ClassNotFoundException e) {
-            LOGGER.error("ClassNotFoundException " + e);
-            //java.util.logging.Logger.getLogger(PojoStick.class.getName()).log(Level.SEVERE, null, ex);
-        }
-        //out = gson.fromJson(input, classType)
-        Object out = gson.fromJson(split[1], classType.getClass());
-        return classType.getClass().cast(out);
     }
 
     /**
@@ -424,102 +438,15 @@ public class PojoStick {
     }
 
     /**
-     * Internal class to store items in the file.
+     * Internal method that adds an action to the end of the file. Allows for
+     * update.
+     *
+     * @param action SAVE or DELETE
+     * @param target the Object to store.
      */
-    private class PojoItem {
-
-        private String type;
-        private Object item;
-
-        public PojoItem() {
-        }
-
-        public PojoItem(Object item) {
-            this.item = item;
-            this.type = item.getClass().getName();
-        }
-    }
-
-    /**
-     * Gson custom deserializer class to make sure PojoActions are properly
-     * deserialized.
-     */
-    private class PojoItemDeSerializer implements JsonDeserializer<PojoItem> {
-
-        /**
-         * Internal method that deserializes a PojoItem object.
-         *
-         * @param json
-         * @param typeOfT
-         * @param context
-         * @return
-         * @throws JsonParseException
-         */
-        @Override
-        public PojoItem deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context) throws JsonParseException {
-            JsonObject jobject = (JsonObject) json;
-            PojoItem newPI = new PojoItem();
-            newPI.type = jobject.get("type").getAsString();
-            try {
-                newPI.item = context.deserialize(jobject.get("item"), Class.forName(newPI.type));
-            }
-            catch (ClassNotFoundException ex) {
-                LOGGER.error("Class not found error: " + ex);
-            }
-            return newPI;
-        }
-    }
-
-    /**
-     * Internal class to store actions on the database.
-     */
-    private class PojoAction {
-
-        private Action action;
-        private String type;
-        private Object target;
-
-        public PojoAction() {
-        }
-
-        PojoAction(Action action, Object target) {
-            this.action = action;
-            this.type = target.getClass().getName();
-            this.target = target;
-        }
-    }
-
-    /**
-     * Gson custom deserializer class to make sure PojoActions are properly
-     * deserialized.
-     */
-    private class PojoActionDeSerializer implements JsonDeserializer<PojoAction> {
-
-        /**
-         * Internal method that deserializes a PojoAction object. It is
-         * necessary because otherwise the target is cast as a Gson String Map
-         * instead of the type it needs to be.
-         *
-         * @param json
-         * @param typeOfT
-         * @param context
-         * @return
-         * @throws JsonParseException
-         */
-        @Override
-        public PojoAction deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context) throws JsonParseException {
-            JsonObject jobject = (JsonObject) json;
-            PojoAction newPA = new PojoAction();
-            newPA.action = Action.valueOf(jobject.get("action").getAsString());
-            newPA.type = jobject.get("type").getAsString();
-            try {
-                newPA.target = context.deserialize(jobject.get("target"), Class.forName(newPA.type));
-            }
-            catch (ClassNotFoundException ex) {
-                LOGGER.error("Class not found error: " + ex);
-            }
-            return newPA;
-        }
+    private void addAction(Action action, Object target, Object newVersion) {
+        PojoAction pa = new PojoAction(action, target, newVersion);
+        writeAction(pa);
     }
 
     /**
@@ -530,6 +457,10 @@ public class PojoStick {
      */
     private void addAction(Action action, Object target) {
         PojoAction pa = new PojoAction(action, target);
+        writeAction(pa);
+    }
+
+    private void writeAction(PojoAction pa) {
         FileWriter writer;
         System.out.println("addaction wants to add...");
         System.out.println("addaction took control.");
@@ -625,20 +556,20 @@ public class PojoStick {
             this.setObjects(readContents(null));
             while (!this.getActionQueue().isEmpty()) {
                 PojoAction next = this.getActionQueue().remove();
-                if (next.action == Action.SAVE) {
+                if (next.getAction() == Action.SAVE) {
                     Object toSave;
                     try {
-                        toSave = Class.forName(next.type).cast(next.target);
+                        toSave = Class.forName(next.getType()).cast(next.getTarget());
                         this.getObjects().add(toSave);
                     }
                     catch (ClassNotFoundException ex) {
                         this.LOGGER.error("Class not found: " + ex);
                     }
                 }
-                else if (next.action == Action.DELETE) {
+                else if (next.getAction() == Action.DELETE) {
                     Object toDelete;
                     try {
-                        toDelete = Class.forName(next.type).cast(next.target);
+                        toDelete = Class.forName(next.getType()).cast(next.getTarget());
                         this.getObjects().remove(toDelete);
                     }
                     catch (ClassNotFoundException ex) {
@@ -649,7 +580,6 @@ public class PojoStick {
             this.ready = true;
             this.persist();
             setDirty(false);
-            //this.dirty = false;
         }
     }
 }
