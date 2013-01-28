@@ -173,11 +173,11 @@ public class PojoStickTest<T extends Object> {
         //Initialize pojostick db
         PojoStick pj = new PojoStick(filename);
         TestPojoStringObject test1 = new TestPojoStringObject("Test String");
-        pj.save(test1);
+        pj.add(test1);
         List<TestPojoStringObject> resultString = pj.findType(TestPojoStringObject.class, "Test String");
         assertEquals(test1.getTestString(), resultString.get(0).getTestString());
         TestPojoStringObject test2 = new TestPojoStringObject("Test String 2");
-        pj.save(test2);
+        pj.add(test2);
         List<TestPojoStringObject> resultList = pj.findType(TestPojoStringObject.class, "Test String");
         List<TestPojoStringObject> compareList = new ArrayList<TestPojoStringObject>();
         compareList.add(test1);

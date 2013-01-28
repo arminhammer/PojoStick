@@ -55,6 +55,7 @@ public class PojoStick {
 
     // List of actions that can be performed on objects in the store.
     public enum Action {
+
         SAVE, DELETE, UPDATE
     };
     /* flag to tell persist() whether this.getObjects() is current or needs to be
@@ -88,8 +89,7 @@ public class PojoStick {
         if (this.pojofile.exists()) {
             try {
                 this.verifyFile();
-            }
-            catch (FileNotVerifiableException e) {
+            } catch (FileNotVerifiableException e) {
                 LOGGER.error("File " + e + " exists, but was not verifiable as a valid PojoStick file.");
             }
             if (this.pojofile.isDirectory()) {
@@ -100,8 +100,7 @@ public class PojoStick {
                 LOGGER.error("PojoStick does not have full permissions to use this file.");
                 System.exit(0);
             }
-        }
-        else {
+        } else {
             try {
                 File parent = this.pojofile.getParentFile();
                 //System.out.println("Parent: " + parent);
@@ -113,16 +112,14 @@ public class PojoStick {
                     writer = new FileWriter(pojofile, true);
                     writer.write(queueSeparator + "\n");
                     writer.close();
-                }
-                catch (IOException ex) {
+                } catch (IOException ex) {
                     LOGGER.error("IOError: " + ex);
                 }
                 //System.out.println("pojofile is " + this.pojofile);
                 boolean created = this.pojofile.createNewFile();
                 //System.out.println(created);
 
-            }
-            catch (IOException ex) {
+            } catch (IOException ex) {
                 LOGGER.error("IOException " + ex);
             }
         }
@@ -193,8 +190,7 @@ public class PojoStick {
                 PojoAction temp = gson.fromJson(line, PojoAction.class);
             }
             in.close();
-        }
-        catch (Exception e) {//Catch exception if any
+        } catch (Exception e) {//Catch exception if any
             LOGGER.error("Error: File verification failed.  File is corrupt: " + e.getMessage());
         }
         return true;
@@ -264,8 +260,7 @@ public class PojoStick {
             writer.write(queueSeparator + "\n");
             writer.write(writeQueue.toString());
             writer.close();
-        }
-        catch (IOException ex) {
+        } catch (IOException ex) {
             LOGGER.error("IOError: " + ex);
         }
         this.getObjects().clear();
@@ -335,6 +330,19 @@ public class PojoStick {
     }
 
     /**
+     * Returns the number of objects currently in the object store.
+     *
+     * @return a List<Object> of all objects in the store.
+     */
+    public int size() {
+        if (isDirty()) {
+            System.out.println("It's dirty, waiting to read.");
+            this.processQueue();
+        }
+        return readContents(null).size();
+    }
+    
+    /**
      * Returns a specific object if it is found in the store.
      *
      * @param o
@@ -400,8 +408,7 @@ public class PojoStick {
                     //returnList.add(gson.fromJson(null, null));
                     //returnList.add(reAnimate(line));
                 }
-            }
-            else {
+            } else {
                 while (!(line = br.readLine()).equals(queueSeparator)) {
                     if (line.contains(query)) {
                         PojoItem nextItem = gson.fromJson(line, PojoItem.class);
@@ -411,8 +418,7 @@ public class PojoStick {
                 }
             }
             in.close();
-        }
-        catch (Exception e) {//Catch exception if any
+        } catch (Exception e) {//Catch exception if any
             LOGGER.error("Error: " + e.getMessage());
         }
         System.out.println("Done reading.");
@@ -468,8 +474,7 @@ public class PojoStick {
             writer = new FileWriter(this.getPojofile(), true);
             writer.write(gson.toJson(pa) + "\n");
             writer.close();
-        }
-        catch (IOException ex) {
+        } catch (IOException ex) {
             LOGGER.error("IOError: " + ex);
         }
         setDirty(true);
@@ -539,8 +544,7 @@ public class PojoStick {
                 }
             }
             in.close();
-        }
-        catch (Exception e) {//Catch exception if any
+        } catch (Exception e) {//Catch exception if any
             LOGGER.error("Error: " + e.getMessage());
         }
         this.setActionQueue(tempQueue);
@@ -560,19 +564,18 @@ public class PojoStick {
                     Object toSave;
                     try {
                         toSave = Class.forName(next.getType()).cast(next.getTarget());
-                        this.getObjects().add(toSave);
-                    }
-                    catch (ClassNotFoundException ex) {
+                        if (!this.getObjects().contains(toSave)) {
+                            this.getObjects().add(toSave);
+                        }
+                    } catch (ClassNotFoundException ex) {
                         this.LOGGER.error("Class not found: " + ex);
                     }
-                }
-                else if (next.getAction() == Action.DELETE) {
+                } else if (next.getAction() == Action.DELETE) {
                     Object toDelete;
                     try {
                         toDelete = Class.forName(next.getType()).cast(next.getTarget());
                         this.getObjects().remove(toDelete);
-                    }
-                    catch (ClassNotFoundException ex) {
+                    } catch (ClassNotFoundException ex) {
                         this.LOGGER.error("Class not found: " + ex);
                     }
                 }

@@ -23,16 +23,23 @@ public class PojoStickList<T> implements List<T> {
     public PojoStickList(String filename) {
         pj = new PojoStick(filename);
         head = null;
-        pj.add(head);
     }
-    
+
     private Node getHead() {
-        return (Node) pj.find(head);
+        if (head == null) {
+            return null;
+        } else {
+            return (Node) pj.find(head);
+        }
     }
-    
+
     private void setHead(Node newHead) {
-        Node oldHead = (Node) pj.find(head);
-        pj.update(oldHead, newHead);
+        if (newHead == null) {
+            head = null;
+        } else {
+            Node oldHead = (Node) pj.find(head);
+            pj.update(oldHead, newHead);
+        }
     }
 
     private class Node {
@@ -102,11 +109,9 @@ public class PojoStickList<T> implements List<T> {
     private Node getLastNode() {
         if (getHead() == null) {
             return null;
-        }
-        else if (getHead().getNext() == null) {
+        } else if (getHead().getNext() == null) {
             return getHead();
-        }
-        else {
+        } else {
             Node next = getHead().getNext();
             while (next.getNext() != null) {
                 next = next.getNext();
@@ -120,8 +125,7 @@ public class PojoStickList<T> implements List<T> {
     public int size() {
         if (getHead() == null) {
             return 0;
-        }
-        else {
+        } else {
             int count = 1;
             Node next = getHead();
             while (next.getNext() != null) {
@@ -134,11 +138,10 @@ public class PojoStickList<T> implements List<T> {
 
     @Override
     public boolean isEmpty() {
-        List<Object> contents = pj.find();
-        if (contents.size() == 0) {
+        int size = pj.size();
+        if (size == 0) {
             return true;
-        }
-        else {
+        } else {
             return false;
         }
     }
@@ -165,15 +168,14 @@ public class PojoStickList<T> implements List<T> {
 
     @Override
     public boolean add(T e) {
-        if(pj.contains(e)) {
+        if (pj.contains(e)) {
             return false;
         }
         Node newNode = new Node(e);
         newNode.setItem(e);
         if (getHead() == null) {
             setHead(newNode);
-        }
-        else {
+        } else {
             Node last = getLastNode();
             last.setNext(newNode);
         }
@@ -217,7 +219,7 @@ public class PojoStickList<T> implements List<T> {
 
     @Override
     public T get(int index) {
-        if(getHead() == null) {
+        if (getHead() == null) {
             //throw IndexOutOfBoundsException(e);
         }
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
