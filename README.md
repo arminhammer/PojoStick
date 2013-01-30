@@ -72,5 +72,11 @@ PojoStick allows you to delete objects that are in the store with delete():
 
     pj.delete(test2);
 
+#PojoStickCollection
+
+PojoStick also provides an implementation of Collection<E> on top of PojoStick.  This is useful if you want to have a
+Java Collection that is persisted in a text file.  Using Collection<E> means that PojoStick is now limited to
+a single type E, instead of allowing for different types of objects.
+
 ## License
 PojoStick is licensed under Apache License 2.0.
