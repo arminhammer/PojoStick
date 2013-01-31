@@ -78,5 +78,16 @@ PojoStick also provides an implementation of Collection<E> on top of PojoStick. 
 Java Collection that is persisted in a text file.  Using Collection<E> means that PojoStick is now limited to
 a single type E, instead of allowing for different types of objects.
 
+## Instantiation
+A PojoStickCollection strays slightly from the Collection<E> interface by requiring a parameter for the constructor.
+The parameter is a String of the file pathname where the PojoStick should be saved:
+
+    PojoStickCollection<String> pc = new PojoStickCollection("/home/arminhammer/data/pc.pojo");
+
+The example above creates a Collection of type String.  A collection of any objects can be created, although it is
+recommended to implement equals(), hashCode(), and a no-argument constructor, like PojoStick above.  All of the
+methods available in Collection<E> are implemented and can be used (size(), isEmpty(), contains(), etc).  All objects
+added to the collection are automatically persisted to the file.
+
 ## License
 PojoStick is licensed under Apache License 2.0.
